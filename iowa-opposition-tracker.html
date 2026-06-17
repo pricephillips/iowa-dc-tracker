@@ -279,10 +279,11 @@ input:focus, select:focus { border-color:var(--iowa) }
       </div>
       <div id="legendOppActivity" style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px">
         <b style="font-size:11px;color:var(--muted);font-weight:600">Opposition Activity</b>
-        <div class="legend-row"><span class="lsw" style="background:#78350f;opacity:.75;border-radius:2px"></span>1–2</div>
-        <div class="legend-row"><span class="lsw" style="background:#92400e;border-radius:2px"></span>3–7</div>
-        <div class="legend-row"><span class="lsw" style="background:#b45309;border-radius:2px"></span>8–15</div>
-        <div class="legend-row"><span class="lsw" style="background:#d97706;border-radius:2px"></span>16+</div>
+        <div class="legend-row"><span class="lsw" style="background:#1e3a5f;opacity:.6;border-radius:2px"></span>None</div>
+        <div class="legend-row"><span class="lsw" style="background:#2563eb;border-radius:2px"></span>1–2</div>
+        <div class="legend-row"><span class="lsw" style="background:#7c3aed;border-radius:2px"></span>3–7</div>
+        <div class="legend-row"><span class="lsw" style="background:#dc2626;border-radius:2px"></span>8–15</div>
+        <div class="legend-row"><span class="lsw" style="background:#fbbf24;border-radius:2px"></span>16+</div>
       </div>
     </div>
   </div>
@@ -311,7 +312,7 @@ if (typeof L === 'undefined' || typeof Papa === 'undefined') {
 }
 
 // Iowa-centered map: zoom 7 to show the whole state nicely
-const DATA_BASE = 'https://pricephillips.github.io/Iowa-dc-tracker';
+const DATA_BASE = 'https://pricephillips.github.io/iowa-dc-tracker';
 const IOWA_CENTER = [42.05, -93.5];
 const IOWA_ZOOM = 7;
 
@@ -830,11 +831,11 @@ let _choroplethFeatures = [];
 let _sevSum = {}, _sevCnt = {};
 
 const OPP_STEPS = [
-  { min: 0,  max: 0,    color: '#1f2937', opacity: 0.08 },
-  { min: 1,  max: 2,    color: '#78350f', opacity: 0.42 },
-  { min: 3,  max: 7,    color: '#92400e', opacity: 0.58 },
-  { min: 8,  max: 15,   color: '#b45309', opacity: 0.72 },
-  { min: 16, max: 9999, color: '#d97706', opacity: 0.88 },
+  { min: 0,  max: 0,    color: '#1e3a5f', opacity: 0.10 },  // none   — dark navy
+  { min: 1,  max: 2,    color: '#2563eb', opacity: 0.50 },  // low    — blue
+  { min: 3,  max: 7,    color: '#7c3aed', opacity: 0.65 },  // medium — purple
+  { min: 8,  max: 15,   color: '#dc2626', opacity: 0.78 },  // high   — red
+  { min: 16, max: 9999, color: '#fbbf24', opacity: 0.92 },  // severe — amber
 ];
 function densityColor(n) { return OPP_STEPS.find(s => n >= s.min && n <= s.max) || OPP_STEPS[0]; }
 
