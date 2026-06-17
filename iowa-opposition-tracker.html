@@ -371,6 +371,43 @@ const OUTCOME_COLORS  = { win: '#dc2626', loss: '#2563eb', pending: '#f39c12', m
 const SOURCE_COLORS   = { ongoing_monitoring: '#5aa9e6', historical_archive: '#e67e22', bryce_rejection_db: '#5aa9e6', fractracker: '#4ade80', datacenter_watch: '#c084fc', dc_opposition_site: '#86efac' };
 const esc = s => String(s || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 
+// Iowa county centroids (approximate geographic centers)
+const IOWA_COUNTY_CENTROIDS = {
+  Adair:[41.3308,-94.4711],Adams:[41.0289,-94.6990],Allamakee:[43.2843,-91.3782],
+  Appanoose:[40.7432,-92.8679],Audubon:[41.6864,-94.9057],Benton:[41.9974,-92.0647],
+  'Black Hawk':[42.4701,-92.3088],Boone:[42.0363,-93.9318],Bremer:[42.7741,-92.3186],
+  Buchanan:[42.4701,-91.8368],Butler:[42.7318,-92.7969],Calhoun:[42.3848,-94.6396],
+  Carroll:[42.0363,-94.8613],Cass:[41.3308,-94.9272],Cedar:[41.7741,-91.1294],
+  'Cerro Gordo':[43.0780,-93.2600],Cherokee:[42.7318,-95.6268],Chickasaw:[43.0594,-92.3186],
+  Clarke:[41.0289,-93.7869],Clay:[43.0780,-95.1500],Clayton:[42.8439,-91.3782],
+  Clinton:[41.8988,-90.5323],Crawford:[41.9170,-95.3891],Dallas:[41.6864,-93.9762],
+  Davis:[40.7432,-92.4124],Decatur:[40.7432,-93.7869],Delaware:[42.4701,-91.3782],
+  'Des Moines':[40.9196,-91.2017],Dickinson:[43.3773,-95.1500],Dubuque:[42.4701,-90.8944],
+  Emmet:[43.3773,-94.6841],Fayette:[42.8439,-91.8368],Floyd:[43.1218,-92.7969],
+  Franklin:[42.7318,-93.2600],Fremont:[40.7432,-95.6268],Greene:[42.0363,-94.3936],
+  Grundy:[42.3848,-92.7969],Guthrie:[41.6864,-94.5156],Hamilton:[42.3848,-93.7424],
+  Hancock:[43.0780,-93.7424],Hardin:[42.3848,-93.2155],Harrison:[41.6864,-95.8218],
+  Henry:[40.9843,-91.5478],Howard:[43.3773,-92.3186],Humboldt:[42.7318,-94.2151],
+  Ida:[42.3848,-95.5145],Iowa:[41.6864,-92.0647],Jackson:[42.1803,-90.5768],
+  Jasper:[41.6864,-92.9124],Jefferson:[41.0289,-92.0201],Johnson:[41.6864,-91.5923],
+  Jones:[42.1219,-91.1294],Keokuk:[41.3308,-92.1981],Kossuth:[43.2012,-94.1706],
+  Lee:[40.6203,-91.4757],Linn:[42.0797,-91.5923],Louisa:[41.2055,-91.2462],
+  Lucas:[41.0289,-93.3489],Lyon:[43.3773,-96.2159],Madison:[41.3308,-93.9762],
+  Mahaska:[41.3308,-92.6358],Marion:[41.3308,-93.0679],Marshall:[42.0363,-92.9569],
+  Mills:[41.0289,-95.6268],Mitchell:[43.3773,-92.7969],Monona:[42.0363,-95.9280],
+  Monroe:[41.0289,-92.8679],Montgomery:[41.0289,-95.1500],Muscatine:[41.4830,-91.1294],
+  "O'Brien":[43.0780,-95.6268],Osceola:[43.3773,-95.6268],Page:[40.7432,-95.1500],
+  'Palo Alto':[43.0780,-94.6841],Plymouth:[42.7318,-96.2159],Pocahontas:[42.7318,-94.6841],
+  Polk:[41.6864,-93.5758],Pottawattamie:[41.3308,-95.5145],Poweshiek:[41.6864,-92.5358],
+  Ringgold:[40.7432,-94.2151],Sac:[42.3848,-95.1500],Scott:[41.6101,-90.6213],
+  Shelby:[41.6864,-95.3891],Sioux:[43.0780,-96.1714],Story:[42.0363,-93.4289],
+  Tama:[42.0797,-92.5358],Taylor:[40.7432,-94.6841],Union:[41.0289,-94.2151],
+  'Van Buren':[40.7432,-91.9479],Wapello:[41.0289,-92.4124],Warren:[41.3308,-93.5758],
+  Washington:[41.3308,-91.7202],Wayne:[40.7432,-93.3046],Webster:[42.4375,-94.1706],
+  Winnebago:[43.3773,-93.7424],Winneshiek:[43.2012,-91.8368],Woodbury:[42.3848,-96.0836],
+  Worth:[43.3773,-93.2600],Wright:[42.7318,-93.7424]
+};
+
 // Iowa congressional districts by county (119th Congress, effective 2023)
 // Source: Iowa Secretary of State / Census redistricting data
 const IOWA_COUNTY_CD = {
@@ -466,18 +503,18 @@ function isResearchTool(r) {
 
 // ── Icon cache ─────────────────────────────────────────────────────────────────
 const _iconCache = new Map();
-function iconFor(r) {
+function iconFor(r, usedCentroid) {
   const o = (r['Community Outcome'] || '').toLowerCase();
   const fillColor = isResearchTool(r) ? '#0d9488' : (OUTCOME_COLORS[o] || '#f39c12');
   const strokeColor = SOURCE_COLORS[r['data_source']] || '#5aa9e6';
   const n = Number(r['Severity'] || 2);
-  const key = fillColor + '|' + strokeColor + '|' + n;
+  const key = fillColor + '|' + strokeColor + '|' + n + (usedCentroid ? '|c' : '');
   let icon = _iconCache.get(key);
   if (!icon) {
     const s = 11 + n * 3;
     icon = L.divIcon({
       className: '', iconSize: [s, s], iconAnchor: [s / 2, s / 2],
-      html: `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}"><rect x="1.5" y="1.5" width="${s - 3}" height="${s - 3}" rx="2" fill="${fillColor}" fill-opacity="0.88" stroke="${strokeColor}" stroke-width="2"/></svg>`
+      html: `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}"><rect x="1.5" y="1.5" width="${s - 3}" height="${s - 3}" rx="2" fill="${fillColor}" fill-opacity="0.88" stroke="${strokeColor}" stroke-width="2"${usedCentroid ? ' stroke-dasharray="3,2"' : ''}/></svg>`
     });
     _iconCache.set(key, icon);
   }
@@ -485,7 +522,7 @@ function iconFor(r) {
 }
 
 // ── Popup builder ─────────────────────────────────────────────────────────────
-function buildPopup(r) {
+function buildPopup(r, usedCentroid) {
   const links = [
     r['Source URL']           ? `<a class="p-link" href="${esc(r['Source URL'])}"           target="_blank" rel="noopener">Source ↗</a>` : '',
     r['Opposition Website']   ? `<a class="p-link" href="${esc(r['Opposition Website'])}"   target="_blank" rel="noopener">Org ↗</a>` : '',
@@ -498,9 +535,13 @@ function buildPopup(r) {
   const inv = r['Investment Million USD'] ? '$' + Number(r['Investment Million USD']).toLocaleString() + 'M' : '—';
   const sigs = r['Petition Signatures'] && +r['Petition Signatures'] > 0 ? Number(r['Petition Signatures']).toLocaleString() + ' sigs' : '';
   const cd = getCD(r);
+  const centroidNote = usedCentroid
+    ? '<div style="font-size:10px;color:#f39c12;margin-bottom:6px;padding:3px 6px;background:rgba(243,156,18,0.12);border-radius:4px;border:1px solid rgba(243,156,18,0.3)">&#9432; Approximate — placed at county centroid</div>'
+    : '';
   return `
     <div class="p-title">${esc(r['Incident'])}${r['Project Name'] && r['Project Name'] !== r['Incident'] ? `<span style="font-weight:400;font-size:11px;color:var(--muted);margin-left:4px">${esc(r['Project Name'])}</span>` : ''} ${srcTagFull(r['data_source'])}${cdBadge(cd)}</div>
     ${badge(r['Community Outcome'])} ${sevDotsLabeled(+r['Severity'] || 2)}
+    ${centroidNote}
     <div class="p-grid">
       <span class="p-label">Date</span>       <span class="p-val">${formatDate(r['Date'])}</span>
       <span class="p-label">County</span>     <span class="p-val">${esc(r['County'] || '—')}</span>
@@ -657,10 +698,9 @@ function renderList(reset = true) {
       <div class="card-snippet">${esc(r['Summary'] || r['Objective']).slice(0, 155)}${(r['Summary'] || r['Objective'] || '').length > 155 ? '…' : ''}</div>
       ${srcUrl ? `<a class="card-source" href="${esc(srcUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Source ↗</a>` : ''}
     `;
-    const _lat = parseFloat(r.lat), _lon = parseFloat(r.lon);
     card.onclick = () => {
       highlightCard(i);
-      if (marker && !isNaN(_lat) && !isNaN(_lon)) {
+      if (marker) {
         clusterGroup.zoomToShowLayer(marker, () => { marker.openPopup(); });
       }
     };
@@ -766,12 +806,18 @@ function handleCSVData(data) {
   leafletMarkers = [];
   rows.forEach(r => {
     if (isRefType(r)) { leafletMarkers.push(null); return; }
-    const mlat = parseFloat(r.lat);
-    const mlon = parseFloat(r.lon);
-    if (isNaN(mlat) || isNaN(mlon) || mlat === 0 || mlon === 0) { leafletMarkers.push(null); return; }
+    let mlat = parseFloat(r.lat);
+    let mlon = parseFloat(r.lon);
+    let usedCentroid = false;
+    if (isNaN(mlat) || isNaN(mlon) || mlat === 0 || mlon === 0) {
+      const countyKey = (r['County'] || '').replace(/\s*County/i, '').trim();
+      const centroid = IOWA_COUNTY_CENTROIDS[countyKey];
+      if (centroid) { mlat = centroid[0]; mlon = centroid[1]; usedCentroid = true; }
+      else { leafletMarkers.push(null); return; }
+    }
 
     const cd = getCD(r);
-    const m = L.marker([mlat, mlon], { icon: iconFor(r) })
+    const m = L.marker([mlat, mlon], { icon: iconFor(r, usedCentroid) })
       .bindPopup(() => buildPopup(r), { maxWidth: 340 })
       .bindTooltip(
         `<b>${esc((r['Incident'] || '').slice(0, 60))}</b><br>${esc(r['County'] || 'Iowa')} ${cd ? '· ' + cd : ''} • ${esc(friendlyOutcome(r['Community Outcome']))}`,
@@ -1261,10 +1307,15 @@ function resetFilters() {
 function zoomToResults() {
   const pts = [];
   const _f = readFilters();
-  rows.forEach(r => {
+  rows.forEach((r, i) => {
     if (!match(r, _f)) return;
     const lat = +r.lat, lon = +r.lon;
-    if (!isNaN(lat) && !isNaN(lon)) pts.push([lat, lon]);
+    if (!isNaN(lat) && lat !== 0 && !isNaN(lon) && lon !== 0) {
+      pts.push([lat, lon]);
+    } else if (leafletMarkers[i]) {
+      const ll = leafletMarkers[i].getLatLng();
+      pts.push([ll.lat, ll.lng]);
+    }
   });
   if (pts.length) navToBounds(pts, { padding: [40, 40], maxZoom: 10, duration: 1.0, easeLinearity: 0.15 });
   else navToBounds([[40.3754, -96.6397], [43.5012, -90.1401]], { padding: [30, 30] }); // Iowa bounds
