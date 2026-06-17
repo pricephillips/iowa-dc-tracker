@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Iowa Data Center Opposition Tracker</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+<style>
+:root {
+  --bg:#0f1218; --panel:#161c25; --panel2:#1c242f; --text:#eef2f7;
+  --muted:#8a96a4; --border:#2c3544;
+  --win:#dc2626; --loss:#2563eb; --pending:#f39c12; --mixed:#9b59b6;
+  --bryce:#5aa9e6; --dct:#e67e22; --atlas:#4f98a3;
+  --iowa:#22c55e;
+}
+* { box-sizing:border-box; margin:0; padding:0 }
+html { height:100%; overflow:hidden }
+body { font-family: Inter,system-ui,sans-serif; background:var(--bg); color:var(--text); height:100dvh; overflow:hidden }
+.app { display:grid; grid-template-columns:340px minmax(0,1fr); overflow:hidden; height:100vh }
+.sidebar { background:var(--panel); border-right:1px solid var(--border); display:flex; flex-direction:column; min-width:0; overflow:hidden; height:100vh; max-width:340px }
+.header { padding:14px 16px 12px; border-bottom:1px solid var(--border) }
+.logo { display:flex; align-items:center; gap:8px; margin-bottom:4px }
+.logo svg { color:var(--iowa); flex-shrink:0 }
+h1 { font-size:16px; font-weight:700 }
+.iowa-badge { display:inline-flex; align-items:center; gap:4px; background:rgba(34,197,94,0.12); border:1px solid rgba(34,197,94,0.3); border-radius:5px; padding:2px 7px; font-size:10px; font-weight:700; color:var(--iowa); margin-left:6px; vertical-align:middle }
+.sub { font-size:11px; color:var(--muted); line-height:1.45 }
+
+.filters { padding:10px 12px; border-bottom:1px solid var(--border); background:var(--panel2); display:flex; flex-direction:column; gap:7px }
+#list { overflow-y:auto; flex:1; padding:10px 12px; }
+.search-wrap { position:relative }
+.search-wrap svg { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none }
+.search-wrap input { padding-left:32px }
+input, select { width:100%; padding:7px 10px; border-radius:8px; border:1px solid var(--border); background:#0c1018; color:var(--text); font-size:12px; outline:none }
+input:focus, select:focus { border-color:var(--iowa) }
+.row2 { display:grid; grid-template-columns:1fr 1fr; gap:7px }
+.row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:7px }
+.chk { display:flex; align-items:center; gap:7px; font-size:11px; color:var(--muted); cursor:pointer }
+.chk input[type=checkbox] { width:auto; accent-color:var(--iowa) }
+.stats { display:grid; gap:5px }
+.stat { padding:8px 6px; border:1px solid var(--border); border-radius:8px; background:#0c1018; text-align:center; cursor:pointer; transition:border-color .15s, background .15s }
+.stat:hover { border-color:#4a5a72 }
+.stat.active { border-color:var(--atlas); background:#0e1822 }
+.skel { background:#0c1018; border:1px solid var(--border); border-radius:10px; height:92px; margin-bottom:7px; position:relative; overflow:hidden }
+.skel::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.05),transparent); animation:shimmer 1.2s infinite }
+@keyframes shimmer { from{transform:translateX(-100%)} to{transform:translateX(100%)} }
+.stat b { display:block; font-size:16px; font-weight:700 }
+.stat span { font-size:10px; color:var(--muted) }
+.stat.s-pending b { color:var(--pending) }
+.stat.s-win b { color:var(--win) }
+.stat.s-loss b { color:var(--loss) }
+.card { padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:#0c1018; margin-bottom:7px; cursor:pointer; transition:border-color 0.15s; content-visibility:auto; contain-intrinsic-size:auto 150px }
+.card:hover { border-color:#4a5a72 }
+.card-title { font-size:13px; font-weight:600; line-height:1.3; margin-bottom:4px }
+.card-meta { font-size:11px; color:var(--muted); display:flex; gap:0; flex-wrap:wrap; margin-bottom:4px }
+.card-meta span { margin-right:10px }
+.badge { display:inline-block; padding:2px 7px; border-radius:999px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.3px }
+.badge-pending { background:#4b3408; color:#ffc15a }
+.badge-win     { background:#3b0a0a; color:#fca5a5 }
+.badge-loss    { background:#0f2548; color:#93c5fd }
+.badge-mixed   { background:#2f1d46; color:#c89fff }
+.badge-        { background:#1a2535; color:#8ab4d4 }
+.src-tag { display:inline-block; padding:1px 6px; border-radius:4px; font-size:9px; font-weight:700; margin-left:5px; vertical-align:middle; position:relative; cursor:help }
+.src-tag .src-tip { display:none; position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%); background:#1c2535; border:1px solid var(--border); border-radius:7px; padding:6px 10px; font-size:11px; color:var(--text); white-space:nowrap; z-index:999; pointer-events:none; font-weight:400 }
+.src-tag:hover .src-tip { display:block }
+.src-bryce { background:#1a2e42; color:var(--bryce) }
+.src-dct   { background:#3b2208; color:var(--dct) }
+.src-frac  { background:#1a3322; color:#4ade80 }
+.src-dcw   { background:#2d1a42; color:#c084fc }
+.src-dco   { background:#1a2a1a; color:#86efac }
+.card-snippet { font-size:11px; color:var(--muted); line-height:1.45; margin-top:4px }
+.mapwrap { position:relative; overflow:hidden; min-height:0; height:100vh; flex:1; }
+#map { position:absolute; inset:0; }
+.legend { position:absolute; top:12px; right:12px; z-index:500; background:rgba(15,18,24,.93); backdrop-filter:blur(8px); border:1px solid var(--border); border-radius:11px; padding:10px 13px; font-size:12px }
+.legend b { color:var(--text); display:block; margin-bottom:5px }
+.legend-row { display:flex; align-items:center; gap:7px; margin:4px 0; color:var(--muted) }
+.lsw { width:10px; height:10px; border-radius:2px; flex-shrink:0 }
+.note { font-size:10px; color:#505d6e; margin-top:7px; max-width:190px; line-height:1.4 }
+.leaflet-div-icon-clean { background: none !important; border: none !important; box-shadow: none !important; }
+.leaflet-popup-content-wrapper { background:#1a2030; border:1px solid var(--border); border-radius:10px; box-shadow:0 6px 24px rgba(0,0,0,.5); color:var(--text) }
+.leaflet-popup-tip { background:#1a2030 }
+.leaflet-popup-content { margin:12px 14px; min-width:240px; max-width:360px }
+.p-title { font-size:14px; font-weight:700; margin-bottom:6px; line-height:1.3 }
+.p-grid { display:grid; grid-template-columns:auto 1fr; gap:4px 11px; font-size:12px; margin:7px 0 }
+.p-label { color:#8a96a4 }
+.p-val { color:#d8e0ea; word-break:break-word }
+.p-summary { font-size:11px; color:#9aabb7; border-top:1px solid #2c3544; padding-top:7px; margin-top:3px; line-height:1.5; max-height:90px; overflow-y:auto }
+.p-links { margin-top:7px; display:flex; gap:9px; flex-wrap:wrap }
+.p-link { font-size:11px; color:#5aa9e6; text-decoration:none }
+.p-link:hover { text-decoration:underline }
+.cd-badge { display:inline-block; padding:1px 6px; border-radius:4px; font-size:10px; font-weight:700; margin-left:4px }
+.cd-1 { background:#1a3a5c; color:#5aa9e6 }
+.cd-2 { background:#1a3322; color:#4ade80 }
+.cd-3 { background:#3b2208; color:#fb923c }
+.cd-4 { background:#2f1d46; color:#c084fc }
+@media (max-width:900px) {
+  .app { grid-template-columns:300px minmax(0,1fr); }
+  .sidebar { max-width:300px; }
+}
+@media (max-width:600px) {
+  .app { grid-template-columns:1fr; grid-template-rows:minmax(260px, 38vh) 1fr }
+  .sidebar { height:auto; max-width:none; }
+  #map { height:100%; min-height:0 }
+}
+.map-hint { position:absolute; bottom:24px; left:50%; transform:translateX(-50%); z-index:500; background:rgba(15,18,24,.88); backdrop-filter:blur(6px); border:1px solid var(--border); border-radius:20px; padding:5px 14px; font-size:11px; color:var(--muted); pointer-events:none; white-space:nowrap }
+.toolbar-row { display:flex; gap:7px; flex-wrap:wrap; margin-top:6px }
+.tool-btn { padding:6px 10px; border-radius:8px; border:1px solid var(--border); background:#0c1018; color:var(--text); font-size:11px; cursor:pointer }
+.tool-btn:hover { border-color:var(--iowa) }
+.card.active { border-color:#ff8f84; box-shadow:0 0 0 1px rgba(255,143,132,.22) inset }
+.card.oc-pending { border-left:3px solid var(--pending) }
+.card.oc-win { border-left:3px solid var(--win) }
+.card.oc-loss { border-left:3px solid var(--loss) }
+.card.oc-mixed { border-left:3px solid var(--mixed) }
+.summary-bar { display:flex; height:9px; border-radius:999px; overflow:hidden; background:#111827; border:1px solid var(--border); margin-top:4px }
+.summary-seg { height:100% }
+.summary-meta { display:flex; gap:10px; flex-wrap:wrap; font-size:11px; color:var(--muted); margin-top:6px }
+.pin-tooltip { background:#0f1722; color:#eef2f7; border:1px solid var(--border); border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.35) }
+.map-status { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:560;
+  background:rgba(15,23,34,.97); border:1px solid #2c3544; border-radius:10px;
+  padding:14px 18px; font-size:12px; color:#eef2f7; max-width:340px; line-height:1.65;
+  display:none; box-shadow:0 10px 36px rgba(0,0,0,.5) }
+.map-status.show { display:block }
+.map-status b { color:#fca5a5 }
+.map-status code { background:#0c1018; border:1px solid #2c3544; border-radius:4px; padding:1px 5px; font-size:11px }
+.card-source { display:inline-block; margin-top:6px; font-size:11px; color:var(--bryce); text-decoration:none; border:1px solid var(--border); border-radius:6px; padding:3px 8px }
+.card-source:hover { border-color:var(--bryce); background:rgba(90,169,230,.08) }
+.card-count { font-size:12px; color:var(--muted); padding:6px 12px 2px; font-weight:500 }
+.card-count b { color:var(--text) }
+.tool-btn.show-map { background:color-mix(in srgb,var(--pending,#f39c12) 12%,transparent); border-color:var(--pending,#f39c12); color:var(--pending,#f39c12) }
+.sev-wrap { display:inline-flex; gap:3px; align-items:center; cursor:help; margin-left:6px }
+.filter-pills { display:flex; flex-wrap:wrap; gap:4px; margin:4px 0 2px; min-height:0; }
+.filter-pill  { display:inline-flex; align-items:center; gap:4px; padding:2px 7px 2px 8px;
+                border-radius:999px; background:rgba(34,197,94,0.12); border:1px solid rgba(34,197,94,0.3);
+                color:#86efac; font-size:10px; font-weight:600; white-space:nowrap; }
+.filter-pill button { background:none; border:none; color:#86efac; font-size:11px; line-height:1;
+                      padding:0; cursor:pointer; opacity:0.7; }
+.filter-pill button:hover { opacity:1; }
+.filter-adv-toggle { width:100%; text-align:left; padding:7px 0 4px; font-size:12px; font-weight:600; color:var(--muted); background:none; border:none; border-top:1px solid var(--border); cursor:pointer; display:flex; align-items:center; gap:6px; margin-top:4px; transition:color .15s }
+.filter-adv-toggle:hover { color:var(--text) }
+.filter-adv-toggle svg { transition:transform .2s }
+.advanced-filters { display:none }
+.advanced-filters.open { display:block }
+.layer-toggles { border-top:1px solid var(--border); margin-top:10px; padding-top:10px }
+.layer-toggle-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin-bottom:6px }
+.layer-chk { display:flex; align-items:center; gap:7px; font-size:12px; color:var(--text); padding:3px 0; cursor:pointer }
+.layer-chk input { width:13px; height:13px; cursor:pointer; accent-color:var(--iowa) }
+.htu-overlay { position:absolute; inset:0; z-index:599; background:rgba(0,0,0,.5); backdrop-filter:blur(2px) }
+.how-to-use  { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:600; background:#0f1722; border:1px solid var(--border); border-radius:14px; padding:24px 28px; max-width:340px; width:90%; box-shadow:0 20px 60px rgba(0,0,0,.6) }
+.how-to-use h3 { font-size:16px; font-weight:800; margin-bottom:6px }
+.how-to-use p  { font-size:12px; color:var(--muted); margin-bottom:14px }
+.how-to-use ul { list-style:none; margin-bottom:18px }
+.how-to-use li { font-size:13px; padding:6px 0; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:flex-start }
+.how-to-use li:last-child { border:none }
+.how-to-use li .ico { font-size:18px; line-height:1; flex-shrink:0 }
+.how-to-use .close-btn { width:100%; padding:10px; border-radius:8px; border:none; background:#0d3321;border:1px solid var(--iowa);color:#fff; font-size:14px; font-weight:700; cursor:pointer }
+/* County choropleth hover tooltip */
+.county-tooltip { background:#0f1722; color:#eef2f7; border:1px solid var(--border); border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.35); font-size:12px; padding:6px 10px }
+/* Iowa-specific theme: county highlight on click */
+.county-selected { color:var(--iowa); font-weight:700 }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="header">
+      <div class="logo">
+        <!-- Iowa outline SVG icon -->
+        <svg width="20" height="20" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6">
+          <path d="M12,15 L88,15 L88,30 L82,30 L82,55 L74,55 L74,62 L68,68 L60,68 L54,74 L46,74 L38,80 L12,80 Z"/>
+        </svg>
+        <h1>Iowa Opposition Tracker <span class="iowa-badge">IA</span></h1>
+      </div>
+      <div class="sub">Data center opposition events across Iowa — community resistance, zoning, legislation, and legal challenges.</div>
+      <div class="sub" id="dataThrough" style="margin-top:3px;color:#5f6c7b"></div>
+    </div>
+
+    <div class="filters">
+      <div class="search-wrap">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input id="q" type="text" placeholder="Incident, county, entity, group…" oninput="debounce()"/>
+      </div>
+      <div class="row2">
+        <select id="fCounty"  onchange="render()"><option value="">All counties</option></select>
+        <select id="fDistrict" onchange="render()">
+          <option value="">All districts</option>
+          <option value="IA-01">IA-01</option>
+          <option value="IA-02">IA-02</option>
+          <option value="IA-03">IA-03</option>
+          <option value="IA-04">IA-04</option>
+        </select>
+      </div>
+      <div class="row2">
+        <select id="fType"    onchange="render()"><option value="">All action types</option></select>
+        <select id="fOutcome" onchange="render()"><option value="">All results</option></select>
+      </div>
+
+      <button class="filter-adv-toggle" onclick="toggleAdvFilters(this)">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        More filters
+      </button>
+      <div class="advanced-filters" id="advFilters">
+        <div class="row3" style="margin-top:6px">
+          <select id="fIssue"  onchange="render()"><option value="">All concerns</option></select>
+          <select id="fAuthority" onchange="render()"><option value="">Any authority</option></select>
+          <select id="fSource" onchange="render()">
+            <option value="">All sources</option>
+            <option value="historical_archive">DCT Archive</option>
+            <option value="ongoing_monitoring">Ongoing monitoring</option>
+            <option value="bryce_rejection_db">Bryce Rejection DB</option>
+            <option value="fractracker">FracTracker</option>
+            <option value="datacenter_watch">Data Center Watch</option>
+            <option value="dc_opposition_site">DC Opposition Site</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="stats" style="grid-template-columns:repeat(5,1fr)">
+        <div class="stat" id="statAll" onclick="statFilter('')" title="Clear outcome filter"><b id="cAll">—</b><span>Total</span></div>
+        <div class="stat s-pending" id="statPending" onclick="statFilter('pending')" title="Pending / active"><b id="cPending">—</b><span>Pending</span></div>
+        <div class="stat s-win" id="statWin" onclick="statFilter('win')" title="Blocked projects"><b id="cWin">—</b><span>Blocked</span></div>
+        <div class="stat s-loss" id="statLoss" onclick="statFilter('loss')" title="Approved projects"><b id="cLoss">—</b><span>Approved</span></div>
+        <div class="stat" id="statMixed" style="--c:var(--mixed)" onclick="statFilter('mixed')" title="Mixed outcomes"><b id="cMixed" style="color:var(--mixed)">—</b><span>Mixed</span></div>
+      </div>
+      <label class="chk"><input type="checkbox" id="activeOnly" onchange="render()"/> Active &amp; pending only</label>
+      <div id="outcomeSummary"></div>
+      <div id="filterPills" class="filter-pills"></div>
+      <div class="toolbar-row">
+        <button class="tool-btn" onclick="resetFilters()">Reset filters</button>
+        <button class="tool-btn show-map" onclick="zoomToResults()">Show on map →</button>
+      </div>
+
+      <div class="layer-toggles">
+        <div class="layer-toggle-title">Map shading</div>
+        <label class="layer-chk"><input type="radio" name="layerMode" value="opposition" checked onchange="updateLayers()"> Opposition activity</label>
+        <label class="layer-chk"><input type="radio" name="layerMode" value="voting" onchange="updateLayers()"> 2024 Presidential Results</label>
+        <label class="layer-chk"><input type="radio" name="layerMode" value="matrix" onchange="updateLayers()"> Opposition × 2024 Politics</label>
+      </div>
+    </div>
+
+    <div class="card-count" id="cardCount"></div>
+    <div id="list" class="list">
+      <div style="padding:6px 0 10px;color:var(--muted);font-size:12px;text-align:center">Loading Iowa incident data…</div>
+      <div class="skel"></div><div class="skel"></div><div class="skel"></div>
+    </div>
+  </aside>
+
+  <div class="mapwrap">
+    <div id="map"></div>
+    <div class="map-status" id="mapStatus"></div>
+    <div class="map-hint" id="mapHint">Hover a county for details · click a pin for incident info</div>
+    <div class="legend">
+      <b>Outcome</b>
+      <div class="legend-row"><span class="lsw" style="background:var(--pending)"></span>Pending / Active</div>
+      <div class="legend-row"><span class="lsw" style="background:var(--win)"></span>Blocked — project stopped</div>
+      <div class="legend-row"><span class="lsw" style="background:var(--loss)"></span>Approved — project advanced</div>
+      <div class="legend-row"><span class="lsw" style="background:var(--mixed)"></span>Mixed / contested</div>
+      <div class="note">Pin size = severity (1–5). Border color = data source.</div>
+      <div id="legendVoting" style="display:none;border-top:1px solid var(--border);margin-top:8px;padding-top:8px">
+        <b style="font-size:11px;color:var(--muted);font-weight:600">2024 Presidential Margin</b>
+        <div style="display:flex;gap:4px;margin-top:6px;align-items:center;font-size:10px;color:var(--muted)">
+          <span style="white-space:nowrap">D +40</span>
+          <div style="flex:1;height:8px;border-radius:3px;background:linear-gradient(to right,#1d4ed8,#475569,#b91c1c)"></div>
+          <span style="white-space:nowrap">R +40</span>
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:3px;text-align:center">Even at midpoint · saturates at ±40 pts</div>
+      </div>
+      <div id="legendMatrix" style="display:none;border-top:1px solid var(--border);margin-top:8px;padding-top:8px">
+        <b style="font-size:11px;color:var(--muted);font-weight:600">Opposition × Politics</b>
+        <div style="margin-top:6px">
+          <canvas id="matrixLegendCanvas" width="110" height="110"></canvas>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-top:2px">
+          <span>Low opposition</span><span>High opposition</span>
+        </div>
+      </div>
+      <div id="legendOppActivity" style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px">
+        <b style="font-size:11px;color:var(--muted);font-weight:600">Opposition Activity</b>
+        <div class="legend-row"><span class="lsw" style="background:#78350f;opacity:.75;border-radius:2px"></span>1–2</div>
+        <div class="legend-row"><span class="lsw" style="background:#92400e;border-radius:2px"></span>3–7</div>
+        <div class="legend-row"><span class="lsw" style="background:#b45309;border-radius:2px"></span>8–15</div>
+        <div class="legend-row"><span class="lsw" style="background:#d97706;border-radius:2px"></span>16+</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// IOWA OPPOSITION TRACKER
+// Single-state build scoped to Iowa. Reads from master_opposition.csv,
+// filters to State = Iowa, and renders county-level choropleth + pin map.
+// GitHub Pages URL for data: https://pricephillips.github.io/data-center-map
+// ─────────────────────────────────────────────────────────────────────────────
+
+function mapStatus(msg) {
+  const el = document.getElementById('mapStatus');
+  if (!el) return;
+  if (!msg) { el.classList.remove('show'); el.innerHTML=''; return; }
+  el.innerHTML = msg;
+  el.classList.add('show');
+}
+
+if (typeof L === 'undefined' || typeof Papa === 'undefined') {
+  const missing = [typeof L === 'undefined' ? 'Leaflet (unpkg.com)' : '', typeof Papa === 'undefined' ? 'PapaParse (unpkg.com)' : ''].filter(Boolean).join(' and ');
+  mapStatus(`<b>Map libraries failed to load.</b><br>${missing} was blocked. Open this page directly in a browser tab.`);
+  throw new Error('Required libraries missing: ' + missing);
+}
+
+// Iowa-centered map: zoom 7 to show the whole state nicely
+const DATA_BASE = 'https://pricephillips.github.io/Iowa-dc-tracker';
+const IOWA_CENTER = [42.05, -93.5];
+const IOWA_ZOOM = 7;
+
+const map = L.map('map', { center: IOWA_CENTER, zoom: IOWA_ZOOM, preferCanvas: true, zoomSnap: 0.25, zoomDelta: 0.5, wheelPxPerZoomLevel: 80 });
+setTimeout(() => map.invalidateSize(), 300);
+window.addEventListener('resize', () => map.invalidateSize());
+if (window.ResizeObserver) {
+  new ResizeObserver(() => map.invalidateSize()).observe(document.querySelector('.mapwrap'));
+}
+
+const PREFERS_REDUCED_MOTION = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+function navToBounds(bounds, opts) {
+  opts = opts || {};
+  if (PREFERS_REDUCED_MOTION) map.fitBounds(bounds, { padding: opts.padding || [30, 30], maxZoom: opts.maxZoom });
+  else map.flyToBounds(bounds, opts);
+}
+
+// Dark basemap with OSM fallback
+let _tileErrors = 0, _tileFellBack = false;
+const baseTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  subdomains: 'abcd', maxZoom: 19, updateWhenIdle: true, attribution: '© OpenStreetMap contributors © CARTO'
+}).addTo(map);
+baseTiles.on('tileerror', () => {
+  _tileErrors++;
+  if (_tileErrors >= 3 && !_tileFellBack) {
+    _tileFellBack = true;
+    map.removeLayer(baseTiles);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, updateWhenIdle: true, attribution: '© OpenStreetMap contributors' }).addTo(map);
+    mapStatus('Basemap CDN unreachable — switched to OpenStreetMap.');
+    setTimeout(() => mapStatus(''), 5000);
+  }
+});
+
+// Marker cluster group
+const clusterGroup = L.markerClusterGroup({
+  maxClusterRadius: 50,
+  chunkedLoading: true,
+  chunkInterval: 120,
+  chunkDelay: 40,
+  iconCreateFunction(c) {
+    const n = c.getChildCount(), sz = n > 100 ? 42 : n > 30 ? 36 : 30;
+    return L.divIcon({
+      className: '',
+      iconSize: [sz, sz],
+      html: `<div style="width:${sz}px;height:${sz}px;border-radius:4px;background:#7d2e0e;border:2px solid #e67e22;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff">${n}</div>`
+    });
+  }
+});
+clusterGroup.on('click', e => { if (e.originalEvent) L.DomEvent.stopPropagation(e); });
+clusterGroup.addTo(map);
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const OUTCOME_LABELS = { win: 'Blocked', loss: 'Approved', pending: 'Pending', active: 'Active', mixed: 'Contested' };
+const friendlyOutcome = v => OUTCOME_LABELS[(v || '').toLowerCase()] || v || '—';
+const OUTCOME_COLORS  = { win: '#dc2626', loss: '#2563eb', pending: '#f39c12', mixed: '#9b59b6' };
+const SOURCE_COLORS   = { ongoing_monitoring: '#5aa9e6', historical_archive: '#e67e22', bryce_rejection_db: '#5aa9e6', fractracker: '#4ade80', datacenter_watch: '#c084fc', dc_opposition_site: '#86efac' };
+const esc = s => String(s || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+
+// Iowa congressional districts by county (119th Congress, effective 2023)
+// Source: Iowa Secretary of State / Census redistricting data
+const IOWA_COUNTY_CD = {
+  // IA-01 (NE Iowa + Quad Cities corridor)
+  'Allamakee':'IA-01','Benton':'IA-01','Black Hawk':'IA-01','Bremer':'IA-01',
+  'Buchanan':'IA-01','Butler':'IA-01','Cedar':'IA-01','Cerro Gordo':'IA-01',
+  'Chickasaw':'IA-01','Clayton':'IA-01','Clinton':'IA-01','Delaware':'IA-01',
+  'Dubuque':'IA-01','Fayette':'IA-01','Floyd':'IA-01','Franklin':'IA-01',
+  'Howard':'IA-01','Jackson':'IA-01','Jones':'IA-01','Linn':'IA-01',
+  'Mitchell':'IA-01','Muscatine':'IA-01','Scott':'IA-01','Winneshiek':'IA-01',
+  // IA-02 (SE Iowa + Des Moines metro east)
+  'Appanoose':'IA-02','Davis':'IA-02','Decatur':'IA-02','Des Moines':'IA-02',
+  'Grundy':'IA-02','Hamilton':'IA-02','Hardin':'IA-02','Henry':'IA-02',
+  'Iowa':'IA-02','Jasper':'IA-02','Jefferson':'IA-02','Johnson':'IA-02',
+  'Keokuk':'IA-02','Lee':'IA-02','Louisa':'IA-02','Lucas':'IA-02',
+  'Mahaska':'IA-02','Marion':'IA-02','Marshall':'IA-02','Monroe':'IA-02',
+  'Poweshiek':'IA-02','Ringgold':'IA-02','Tama':'IA-02','Van Buren':'IA-02',
+  'Wapello':'IA-02','Warren':'IA-02','Washington':'IA-02','Wayne':'IA-02',
+  // IA-03 (SW Iowa + Des Moines metro west)
+  'Adair':'IA-03','Adams':'IA-03','Audubon':'IA-03','Cass':'IA-03',
+  'Clarke':'IA-03','Dallas':'IA-03','Fremont':'IA-03','Guthrie':'IA-03',
+  'Harrison':'IA-03','Madison':'IA-03','Mills':'IA-03','Montgomery':'IA-03',
+  'Page':'IA-03','Polk':'IA-03','Pottawattamie':'IA-03','Ringgold':'IA-03',
+  'Shelby':'IA-03','Story':'IA-03','Taylor':'IA-03','Union':'IA-03',
+  // IA-04 (NW Iowa — largest, most rural)
+  'Boone':'IA-04','Buena Vista':'IA-04','Calhoun':'IA-04','Carroll':'IA-04',
+  'Cherokee':'IA-04','Clay':'IA-04','Crawford':'IA-04','Dickinson':'IA-04',
+  'Emmet':'IA-04','Greene':'IA-04','Hancock':'IA-04','Humboldt':'IA-04',
+  'Ida':'IA-04','Kossuth':'IA-04','Lyon':'IA-04','Monona':'IA-04',
+  'O\'Brien':'IA-04','Osceola':'IA-04','Palo Alto':'IA-04','Plymouth':'IA-04',
+  'Pocahontas':'IA-04','Sac':'IA-04','Sioux':'IA-04','Webster':'IA-04',
+  'Winnebago':'IA-04','Worth':'IA-04','Wright':'IA-04'
+};
+
+function getCD(row) {
+  const county = (row['County'] || '').replace(/\s+County$/i, '').trim();
+  return IOWA_COUNTY_CD[county] || '';
+}
+
+function cdBadge(cd) {
+  if (!cd) return '';
+  const cls = { 'IA-01': 'cd-1', 'IA-02': 'cd-2', 'IA-03': 'cd-3', 'IA-04': 'cd-4' }[cd] || '';
+  return `<span class="cd-badge ${cls}">${esc(cd)}</span>`;
+}
+
+// ── Date formatting ────────────────────────────────────────────────────────────
+const _NOW_DATE = new Date();
+function formatDate(v) {
+  if (!v) return '—';
+  const s = String(v).trim();
+  const now = _NOW_DATE;
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(s)) {
+    const d = new Date(s + 'T12:00:00');
+    if (isNaN(d)) return s;
+    const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return d > now ? '~' + label : label;
+  }
+  if (/^\d{4}-\d{1,2}$/.test(s)) {
+    const [y, m] = s.split('-').map(Number);
+    const d = new Date(y, m - 1, 1);
+    const label = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    return d > now ? '~' + label : label;
+  }
+  if (/^\d{4}$/.test(s)) {
+    const d = new Date(+s, 0, 1);
+    return d > now ? '~' + s : s;
+  }
+  return s;
+}
+
+const badge = v => { const k = (v || '').toLowerCase(); return `<span class="badge badge-${k || ''}">${esc(friendlyOutcome(v))}</span>`; };
+
+// ── Row & marker data ─────────────────────────────────────────────────────────
+let rows = [], leafletMarkers = [], cardRefs = [];
+
+const REFERENCE_TYPES = new Set([
+  'study', 'report', 'study or report', 'study_or_report', 'study/report',
+  'background study', 'white paper', 'whitepaper', 'policy report', 'impact study',
+  'environmental study', 'environmental report', 'background report', 'reference',
+  'reference document', 'literature review', 'technical report', 'academic study'
+]);
+function isRefType(r) {
+  const rt = String(r['Record Type'] || '').trim().toLowerCase();
+  const outcome = String(r['Community Outcome'] || '').trim().toLowerCase();
+  return (rt !== '' && REFERENCE_TYPES.has(rt)) || outcome === 'reference';
+}
+const RESEARCH_TOOL_TYPES = new Set(['research_tool', 'commissioned_study', 'opposition_study', 'campaign_research', 'expert_report', 'impact_assessment']);
+function isResearchTool(r) {
+  const sub = String(r['record_subtype'] || '').trim().toLowerCase();
+  const rt  = String(r['Record Type'] || '').trim().toLowerCase();
+  return RESEARCH_TOOL_TYPES.has(sub) || RESEARCH_TOOL_TYPES.has(rt);
+}
+
+// ── Icon cache ─────────────────────────────────────────────────────────────────
+const _iconCache = new Map();
+function iconFor(r) {
+  const o = (r['Community Outcome'] || '').toLowerCase();
+  const fillColor = isResearchTool(r) ? '#0d9488' : (OUTCOME_COLORS[o] || '#f39c12');
+  const strokeColor = SOURCE_COLORS[r['data_source']] || '#5aa9e6';
+  const n = Number(r['Severity'] || 2);
+  const key = fillColor + '|' + strokeColor + '|' + n;
+  let icon = _iconCache.get(key);
+  if (!icon) {
+    const s = 11 + n * 3;
+    icon = L.divIcon({
+      className: '', iconSize: [s, s], iconAnchor: [s / 2, s / 2],
+      html: `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}"><rect x="1.5" y="1.5" width="${s - 3}" height="${s - 3}" rx="2" fill="${fillColor}" fill-opacity="0.88" stroke="${strokeColor}" stroke-width="2"/></svg>`
+    });
+    _iconCache.set(key, icon);
+  }
+  return icon;
+}
+
+// ── Popup builder ─────────────────────────────────────────────────────────────
+function buildPopup(r) {
+  const links = [
+    r['Source URL']           ? `<a class="p-link" href="${esc(r['Source URL'])}"           target="_blank" rel="noopener">Source ↗</a>` : '',
+    r['Opposition Website']   ? `<a class="p-link" href="${esc(r['Opposition Website'])}"   target="_blank" rel="noopener">Org ↗</a>` : '',
+    r['Petition URL']         ? `<a class="p-link" href="${esc(r['Petition URL'])}"         target="_blank" rel="noopener">Petition ↗</a>` : '',
+    r['Opposition Facebook']  ? `<a class="p-link" href="${esc(r['Opposition Facebook'])}"  target="_blank" rel="noopener">Facebook ↗</a>` : '',
+    r['Opposition Twitter']   ? `<a class="p-link" href="${esc(r['Opposition Twitter'])}"   target="_blank" rel="noopener">Twitter/X ↗</a>` : '',
+    r['Opposition Instagram']  ? `<a class="p-link" href="${esc(r['Opposition Instagram'])}" target="_blank" rel="noopener">Instagram ↗</a>` : '',
+  ].filter(Boolean).join('');
+  const mw  = r['Megawatts'] ? r['Megawatts'] + ' MW' : '—';
+  const inv = r['Investment Million USD'] ? '$' + Number(r['Investment Million USD']).toLocaleString() + 'M' : '—';
+  const sigs = r['Petition Signatures'] && +r['Petition Signatures'] > 0 ? Number(r['Petition Signatures']).toLocaleString() + ' sigs' : '';
+  const cd = getCD(r);
+  return `
+    <div class="p-title">${esc(r['Incident'])}${r['Project Name'] && r['Project Name'] !== r['Incident'] ? `<span style="font-weight:400;font-size:11px;color:var(--muted);margin-left:4px">${esc(r['Project Name'])}</span>` : ''} ${srcTagFull(r['data_source'])}${cdBadge(cd)}</div>
+    ${badge(r['Community Outcome'])} ${sevDotsLabeled(+r['Severity'] || 2)}
+    <div class="p-grid">
+      <span class="p-label">Date</span>       <span class="p-val">${formatDate(r['Date'])}</span>
+      <span class="p-label">County</span>     <span class="p-val">${esc(r['County'] || '—')}</span>
+      <span class="p-label">Entity</span>     <span class="p-val">${esc(r['Entity'])}</span>
+      <span class="p-label">Type</span>       <span class="p-val">${esc(r['Opposition Type'])}</span>
+      <span class="p-label">Status</span>     <span class="p-val">${esc(r['Status'])}</span>
+      ${cd ? `<span class="p-label">District</span><span class="p-val">${esc(cd)}</span>` : ''}
+      ${r['Issue Category'] ? `<span class="p-label">Issue</span><span class="p-val">${esc(r['Issue Category'])}</span>` : ''}
+      ${r['Authority Level'] ? `<span class="p-label">Authority</span><span class="p-val">${esc(r['Authority Level'])}</span>` : ''}
+      ${mw !== '—' ? `<span class="p-label">Power</span><span class="p-val">${mw}</span>` : ''}
+      ${r['Acreage'] ? `<span class="p-label">Acreage</span><span class="p-val">${Number(r['Acreage']).toLocaleString()} ac</span>` : ''}
+      ${inv !== '—' ? `<span class="p-label">Investment</span><span class="p-val">${inv}</span>` : ''}
+      ${r['building_sq_ft'] ? `<span class="p-label">Building</span><span class="p-val">${Number(r['building_sq_ft']).toLocaleString()} sq ft</span>` : ''}
+      ${r['water_usage_gallons_per_day'] ? `<span class="p-label">Water/day</span><span class="p-val">${Number(r['water_usage_gallons_per_day']).toLocaleString()} gal</span>` : ''}
+      ${sigs ? `<span class="p-label">Petition</span><span class="p-val">${sigs}</span>` : ''}
+      ${r['Opposition Groups'] ? `<span class="p-label">Groups</span><span class="p-val">${esc(r['Opposition Groups'])}</span>` : ''}
+    </div>
+    ${r['Summary'] ? `<div class="p-summary">${esc(r['Summary'].slice(0, 500))}${r['Summary'].length > 500 ? '…' : ''}</div>` : ''}
+    ${links ? `<div class="p-links">${links}</div>` : ''}
+  `;
+}
+
+// ── Filter logic ──────────────────────────────────────────────────────────────
+function match(r, f) {
+  if (f.fCo && (r['County'] || '').replace(/\s+County$/i, '').trim() !== f.fCo) return false;
+  if (f.fDi && getCD(r) !== f.fDi) return false;
+  if (f.fTy && r['Opposition Type'] !== f.fTy) return false;
+  if (f.fOc) {
+    if (f.fOc === 'pending') {
+      const k = (r['Community Outcome'] || '').trim().toLowerCase();
+      if (k === 'win' || k === 'loss' || k === 'mixed') return false;
+    } else if (r['Community Outcome'] !== f.fOc) return false;
+  }
+  if (f.fIs) {
+    const tokens = (r['Issue Category'] || '').split(/;\s*/).map(s => s.trim().toLowerCase());
+    if (!tokens.includes(f.fIs.toLowerCase())) return false;
+  }
+  if (f.fAu && r['Authority Level'] !== f.fAu) return false;
+  if (f.fSr && r['data_source'] !== f.fSr) return false;
+  if (f.act && !['active', 'pending'].includes((r['Community Outcome'] || '').toLowerCase())) return false;
+  if (!f.q) return true;
+  return (r._hay || '').includes(f.q);
+}
+
+let _cachedFilters = null;
+function readFilters() {
+  return {
+    q:   document.getElementById('q').value.trim().toLowerCase(),
+    fCo: document.getElementById('fCounty').value,
+    fDi: document.getElementById('fDistrict').value,
+    fTy: document.getElementById('fType').value,
+    fOc: document.getElementById('fOutcome').value,
+    fIs: document.getElementById('fIssue').value,
+    fAu: document.getElementById('fAuthority').value,
+    fSr: document.getElementById('fSource').value,
+    act: document.getElementById('activeOnly').checked,
+  };
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+const LIST_CHUNK = 150;
+let _listLimit = LIST_CHUNK;
+let _visibleCache = [];
+let _countyHoverStats = {};
+
+function render() {
+  _cachedFilters = null;
+  _listLimit = LIST_CHUNK;
+  clusterGroup.clearLayers();
+  document.getElementById('list').scrollTop = 0;
+  const visible = [];
+  const f = readFilters();
+  rows.forEach((r, i) => { if (!isRefType(r) && match(r, f)) visible.push({ r, i }); });
+  _visibleCache = visible;
+
+  updateCardCount(visible.length, rows.length);
+
+  if (!visible.length) {
+    _countyHoverStats = {};
+    document.getElementById('list').innerHTML = '<div style="padding:28px 12px;text-align:center;color:var(--muted);font-size:12px;line-height:1.6">No Iowa incidents match the current filters.<br><button onclick="resetFilters()" style="margin-top:10px;padding:5px 14px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:11px;cursor:pointer">Reset filters</button></div>';
+    document.getElementById('cAll').textContent = '0';
+    document.getElementById('cPending').textContent = '0';
+    document.getElementById('cWin').textContent = '0';
+    document.getElementById('cLoss').textContent = '0';
+    const mixedEl = document.getElementById('cMixed'); if (mixedEl) mixedEl.textContent = '0';
+    renderOutcomeSummary(0, 0, 0, 0);
+    updateFilterPills();
+    updateStatActive();
+    updateChoroplethVisuals();
+    return;
+  }
+
+  let pending = 0, win = 0, loss = 0, mixed = 0;
+  _countyHoverStats = {};
+  const markersToAdd = [];
+
+  visible.forEach(({ r, i }) => {
+    const marker = leafletMarkers[i];
+    if (marker) markersToAdd.push(marker);
+    const outcome = String(r['Community Outcome'] || '').trim().toLowerCase();
+    if (outcome === 'win') win++;
+    else if (outcome === 'loss') loss++;
+    else if (outcome === 'mixed') mixed++;
+    else pending++;
+
+    const county = (r['County'] || '').replace(/\s+County$/i, '').trim();
+    if (county) {
+      const s = _countyHoverStats[county] || (_countyHoverStats[county] = { bl: 0, ap: 0, pe: 0, mx: 0, total: 0 });
+      s.total++;
+      if (outcome === 'win') s.bl++;
+      else if (outcome === 'loss') s.ap++;
+      else if (outcome === 'mixed') s.mx++;
+      else s.pe++;
+    }
+  });
+
+  renderList();
+  if (markersToAdd.length) clusterGroup.addLayers(markersToAdd);
+
+  document.getElementById('cAll').textContent     = visible.length.toLocaleString();
+  document.getElementById('cPending').textContent = pending.toLocaleString();
+  document.getElementById('cWin').textContent     = win.toLocaleString();
+  document.getElementById('cLoss').textContent    = loss.toLocaleString();
+  const mixedEl = document.getElementById('cMixed'); if (mixedEl) mixedEl.textContent = mixed.toLocaleString();
+  renderOutcomeSummary(pending, win, loss, mixed);
+  updateFilterPills();
+  updateStatActive();
+  updateChoroplethVisuals();
+}
+
+let _renderedCount = 0, _showMoreBtn = null;
+function renderList(reset = true) {
+  const list = document.getElementById('list');
+  if (reset) { list.innerHTML = ''; cardRefs = []; _renderedCount = 0; _showMoreBtn = null; }
+  if (_showMoreBtn) { _showMoreBtn.remove(); _showMoreBtn = null; }
+  const fragment = document.createDocumentFragment();
+  const slice = _visibleCache.slice(_renderedCount, _listLimit);
+
+  slice.forEach(({ r, i }) => {
+    const marker = leafletMarkers[i];
+    const card = document.createElement('div');
+    card.className = 'card oc-' + ((r['Community Outcome'] || 'pending').toLowerCase());
+    const srcUrl = r['Source URL'] || r['Opposition Website'] || '';
+    const cd = getCD(r);
+    card.innerHTML = `
+      <div class="card-title">${esc(r['Incident'])}${srcTagFull(r['data_source'])}${cdBadge(cd)}</div>
+      <div class="card-meta">
+        <span>${esc(r['County'] || 'Iowa')}</span>
+        <span>${formatDate(r['Date'])}</span>
+        <span>${esc(r['Opposition Type'])}</span>
+        ${r['Megawatts'] ? `<span>${r['Megawatts']} MW</span>` : ''}
+      </div>
+      ${badge(r['Community Outcome'])}${sevDotsLabeled(+r['Severity'] || 2)}
+      <div class="card-snippet">${esc(r['Summary'] || r['Objective']).slice(0, 155)}${(r['Summary'] || r['Objective'] || '').length > 155 ? '…' : ''}</div>
+      ${srcUrl ? `<a class="card-source" href="${esc(srcUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Source ↗</a>` : ''}
+    `;
+    const _lat = parseFloat(r.lat), _lon = parseFloat(r.lon);
+    card.onclick = () => {
+      highlightCard(i);
+      if (marker && !isNaN(_lat) && !isNaN(_lon)) {
+        clusterGroup.zoomToShowLayer(marker, () => { marker.openPopup(); });
+      }
+    };
+    cardRefs[i] = card;
+    fragment.appendChild(card);
+  });
+
+  _renderedCount = Math.min(_listLimit, _visibleCache.length);
+  const remaining = _visibleCache.length - _renderedCount;
+  if (remaining > 0) {
+    const btn = document.createElement('button');
+    btn.className = 'tool-btn';
+    btn.style.cssText = 'width:100%;margin-top:4px;padding:9px';
+    btn.textContent = `Show ${Math.min(LIST_CHUNK, remaining)} more (${remaining.toLocaleString()} remaining)`;
+    btn.onclick = () => { _listLimit += LIST_CHUNK; renderList(false); };
+    fragment.appendChild(btn);
+    _showMoreBtn = btn;
+  }
+  list.appendChild(fragment);
+}
+
+function updateFilterPills() {
+  const el = document.getElementById('filterPills');
+  if (!el) return;
+  const labels = {
+    fCounty:    v => v + ' County',
+    fDistrict:  v => v,
+    fType:      v => v,
+    fOutcome:   v => friendlyOutcome(v),
+    fIssue:     v => v,
+    fAuthority: v => v,
+    fSource:    v => ({ ongoing_monitoring: 'Ongoing monitoring', historical_archive: 'DCT Archive', bryce_rejection_db: 'Bryce Rejection DB', fractracker: 'FracTracker', datacenter_watch: 'Data Center Watch', dc_opposition_site: 'DC Opposition Site' }[v] || v),
+  };
+  const active = Object.entries(labels)
+    .map(([id, fmt]) => { const el2 = document.getElementById(id); return el2 && el2.value ? { id, label: fmt(el2.value) } : null; })
+    .filter(Boolean);
+  const activeOnly = document.getElementById('activeOnly');
+  if (activeOnly && activeOnly.checked) active.push({ id: 'activeOnly', label: 'Active & pending only' });
+  el.innerHTML = active.map(({ id, label }) =>
+    `<span class="filter-pill">${esc(label)} <button onclick="clearPill('${id}')" title="Remove filter">×</button></span>`
+  ).join('');
+}
+
+function clearPill(id) {
+  if (id === 'activeOnly') { document.getElementById('activeOnly').checked = false; }
+  else { const el = document.getElementById(id); if (el) el.value = ''; }
+  render();
+}
+
+let dt, _debounceActive = false;
+function debounce() {
+  if (!_debounceActive) { _debounceActive = true; render(); }
+  clearTimeout(dt);
+  dt = setTimeout(() => { _debounceActive = false; render(); }, 320);
+}
+
+// ── CSV loading — Iowa filter applied here ────────────────────────────────────
+function startCSVLoad(urls) {
+  if (!urls.length) {
+    mapStatus('<b>Data failed to load.</b> <code>master_opposition.csv</code> was not reachable.');
+    const listEl = document.getElementById('list');
+    if (listEl) listEl.innerHTML = '<div style="padding:24px 12px;text-align:center;color:#fca5a5;font-size:12px;line-height:1.6">Incident data failed to load.<br>Check the data source and reload.</div>';
+    return;
+  }
+  Papa.parse(urls[0], {
+    download: true, header: true, skipEmptyLines: true,
+    error: () => startCSVLoad(urls.slice(1)),
+    complete: (res) => {
+      if (!res.data || !res.data.length) { startCSVLoad(urls.slice(1)); return; }
+      handleCSVData(res.data);
+    }
+  });
+}
+
+function handleCSVData(data) {
+  const SOURCE_MAP = {
+    bryce_tracker:           'ongoing_monitoring',
+    historical_archive:      'historical_archive',
+    datacentertracker_org:   'historical_archive',
+    fractracker:             'fractracker',
+    bryce_rejection_db:      'bryce_rejection_db',
+    datacenter_watch:        'datacenter_watch',
+    dc_opposition_site:      'dc_opposition_site',
+  };
+
+  // ── Iowa filter: keep only Iowa rows ──────────────────────────────────────
+  const IOWA_NAMES = new Set(['Iowa', 'IA']);
+  const allRows = data.map(r => {
+    const raw = String(r['data_source'] || '').trim();
+    return { ...r, data_source: SOURCE_MAP[raw] || (raw ? raw : 'historical_archive') };
+  });
+  const iowaRows = allRows.filter(r => IOWA_NAMES.has((r['State'] || '').trim()));
+
+  const NOW = Date.now();
+  iowaRows.forEach(r => {
+    const d = new Date(r['Date'] || '');
+    r._ts = isNaN(d.getTime()) ? 0 : Math.min(d.getTime(), NOW);
+    r._hay = [r['Incident'], r['Entity'], r['County'], r['Opposition Groups'], r['Opposition Type'], r['Objective'], r['Summary'], r['Company'], r['Hyperscaler'], r['City'], r['Project Name'], r['Issue Category']].join(' ').toLowerCase();
+  });
+  iowaRows.sort((a, b) => b._ts - a._ts);
+  rows = iowaRows;
+
+  leafletMarkers = [];
+  rows.forEach(r => {
+    if (isRefType(r)) { leafletMarkers.push(null); return; }
+    const mlat = parseFloat(r.lat);
+    const mlon = parseFloat(r.lon);
+    if (isNaN(mlat) || isNaN(mlon) || mlat === 0 || mlon === 0) { leafletMarkers.push(null); return; }
+
+    const cd = getCD(r);
+    const m = L.marker([mlat, mlon], { icon: iconFor(r) })
+      .bindPopup(() => buildPopup(r), { maxWidth: 340 })
+      .bindTooltip(
+        `<b>${esc((r['Incident'] || '').slice(0, 60))}</b><br>${esc(r['County'] || 'Iowa')} ${cd ? '· ' + cd : ''} • ${esc(friendlyOutcome(r['Community Outcome']))}`,
+        { direction: 'top', className: 'pin-tooltip' }
+      );
+    const idx = leafletMarkers.length;
+    m.on('click', e => { L.DomEvent.stopPropagation(e); highlightCard(idx); });
+    leafletMarkers.push(m);
+  });
+
+  // Populate filters from Iowa data only
+  const oppRows = rows.filter(r => !isRefType(r));
+  const pop = (id, vals) => {
+    const el = document.getElementById(id);
+    [...new Set(vals.filter(Boolean))].sort().forEach(v =>
+      el.insertAdjacentHTML('beforeend', `<option value="${esc(v)}">${esc(v)}</option>`)
+    );
+  };
+
+  // County dropdown — clean up "County" suffix
+  pop('fCounty', oppRows.map(r => (r['County'] || '').replace(/\s+County$/i, '').trim()));
+  pop('fType', oppRows.map(r => r['Opposition Type']));
+
+  const outcomeEl = document.getElementById('fOutcome');
+  const seenOutcomes = [...new Set(oppRows.map(r => r['Community Outcome']).filter(Boolean))].sort();
+  seenOutcomes.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v; opt.textContent = friendlyOutcome(v);
+    outcomeEl.appendChild(opt);
+  });
+  pop('fAuthority', oppRows.map(r => r['Authority Level']));
+
+  const issues = [...new Set(
+    oppRows.flatMap(r => (r['Issue Category'] || '').split(/;\s*/).map(x => x.trim()))
+  )].filter(Boolean).sort();
+  const fIs = document.getElementById('fIssue');
+  issues.forEach(v => fIs.insertAdjacentHTML('beforeend', `<option value="${esc(v)}">${esc(v)}</option>`));
+
+  window._oppTotal = oppRows.length;
+
+  const newestTs = rows.reduce((m, r) => Math.max(m, r._ts || 0), 0);
+  const dtEl = document.getElementById('dataThrough');
+  if (dtEl && newestTs > 0) {
+    const label = new Date(newestTs).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    dtEl.textContent = `Data through ${label} · ${oppRows.length.toLocaleString()} Iowa incidents`;
+  }
+
+  render();
+  tryBuildChoropleth();
+}
+
+// ── County choropleth (Iowa counties) ────────────────────────────────────────
+let choroplethLayer = null;
+let _choroplethBuilt = false;
+let _geoJsonCache = null;
+let _choroplethFeatures = [];
+let _sevSum = {}, _sevCnt = {};
+
+const OPP_STEPS = [
+  { min: 0,  max: 0,    color: '#1f2937', opacity: 0.08 },
+  { min: 1,  max: 2,    color: '#78350f', opacity: 0.42 },
+  { min: 3,  max: 7,    color: '#92400e', opacity: 0.58 },
+  { min: 8,  max: 15,   color: '#b45309', opacity: 0.72 },
+  { min: 16, max: 9999, color: '#d97706', opacity: 0.88 },
+];
+function densityColor(n) { return OPP_STEPS.find(s => n >= s.min && n <= s.max) || OPP_STEPS[0]; }
+
+function updateChoroplethVisuals() {
+  if (!choroplethLayer) return;
+  // Rebuild county counts from current filter state
+  const countyCounts = {};
+  _cachedFilters = _cachedFilters || readFilters();
+  rows.forEach(r => {
+    if (isRefType(r) || !match(r, _cachedFilters)) return;
+    const county = (r['County'] || '').replace(/\s+County$/i, '').trim();
+    if (county) countyCounts[county] = (countyCounts[county] || 0) + 1;
+  });
+  choroplethLayer.eachLayer(layer => {
+    const name = layer.feature?.properties?.NAME || layer.feature?.properties?.name || '';
+    const cnt = countyCounts[name] || 0;
+    layer.feature.properties._count = cnt;
+    const s = densityColor(cnt);
+    layer.setStyle({ fill: true, fillColor: s.color, fillOpacity: s.opacity, color: '#374151', weight: 1.2, opacity: 1 });
+  });
+}
+
+function tryBuildChoropleth() {
+  if (_choroplethBuilt || !_geoJsonCache || !rows.length) return;
+  _choroplethBuilt = true;
+  buildChoropleth(_geoJsonCache);
+}
+
+function buildChoropleth(geoJson) {
+  // Filter GeoJSON to Iowa counties only (FIPS starting with 19)
+  const iowaFeatures = geoJson.features.filter(f => String(f.id || '').startsWith('19'));
+  if (!iowaFeatures.length) {
+    console.warn('No Iowa county features found in GeoJSON');
+    return;
+  }
+
+  // Build initial counts
+  const countyCounts = {};
+  _sevSum = {}; _sevCnt = {};
+  rows.forEach(r => {
+    if (isRefType(r)) return;
+    const county = (r['County'] || '').replace(/\s+County$/i, '').trim();
+    if (county) {
+      countyCounts[county] = (countyCounts[county] || 0) + 1;
+      const sev = +r['Severity'] || 1;
+      _sevSum[county] = (_sevSum[county] || 0) + sev;
+      _sevCnt[county] = (_sevCnt[county] || 0) + 1;
+    }
+  });
+
+  choroplethLayer = L.geoJSON({ type: 'FeatureCollection', features: iowaFeatures }, {
+    style: feat => {
+      const name = feat.properties.NAME || feat.properties.name || '';
+      const cnt = countyCounts[name] || 0;
+      feat.properties._count = cnt;
+      const s = densityColor(cnt);
+      return { fill: true, fillColor: s.color, fillOpacity: s.opacity, color: '#374151', weight: 1.2, opacity: 1 };
+    },
+    onEachFeature: (feat, layer) => {
+      const name = feat.properties.NAME || feat.properties.name || '';
+      const cnt = countyCounts[name] || 0;
+      const cd = IOWA_COUNTY_CD[name] || '';
+
+      layer.on({
+        mouseover: e => {
+          e.target.setStyle({ weight: 2.5, color: '#86efac', fillOpacity: Math.min(0.95, densityColor(cnt).opacity + 0.12) });
+          const s = _countyHoverStats[name];
+          if (s && s.total > 0) {
+            const parts = [];
+            if (s.bl) parts.push(`🔴 ${s.bl} Blocked`);
+            if (s.ap) parts.push(`🔵 ${s.ap} Approved`);
+            if (s.pe) parts.push(`⏳ ${s.pe} Pending`);
+            if (s.mx) parts.push(`🟣 ${s.mx} Mixed`);
+            document.getElementById('mapHint').textContent = `${name} County${cd ? ' · ' + cd : ''}: ${s.total} incident${s.total === 1 ? '' : 's'} — ${parts.join(' · ')}`;
+          } else if (cnt > 0) {
+            document.getElementById('mapHint').textContent = `${name} County${cd ? ' · ' + cd : ''}: ${cnt} incident${cnt === 1 ? '' : 's'} (filtered out)`;
+          } else {
+            document.getElementById('mapHint').textContent = `${name} County${cd ? ' · ' + cd : ''}: no recorded opposition`;
+          }
+        },
+        mouseout: e => {
+          choroplethLayer.resetStyle(e.target);
+          document.getElementById('mapHint').textContent = 'Hover a county for details · click a pin for incident info';
+        },
+        click: () => {
+          // Clicking a county filters to it in the sidebar
+          const el = document.getElementById('fCounty');
+          if (el) { el.value = name === el.value ? '' : name; render(); }
+        }
+      });
+
+      layer.bindTooltip(
+        `<b>${name} County</b>${cd ? ' · ' + cd : ''}<br>${cnt} opposition incident${cnt === 1 ? '' : 's'}`,
+        { sticky: true, className: 'pin-tooltip' }
+      );
+    }
+  });
+  choroplethLayer.addTo(map);
+  choroplethLayer.bringToBack();
+
+  _choroplethFeatures = [];
+  choroplethLayer.eachLayer(l => { if (l.feature) _choroplethFeatures.push(l.feature); });
+}
+
+// ── Political layer ────────────────────────────────────────────────────────────
+let voteData = null, votingLayer = null, matrixLayer = null;
+let voteDataScale = 1;
+
+// Iowa county 2024 presidential margins (R negative, D positive) — embedded fallback
+// Source: MIT Election Lab / Associated Press
+const IOWA_COUNTY_2024 = {
+  'Adair':-33.6,'Adams':-31.1,'Allamakee':-26.6,'Appanoose':-31.5,'Audubon':-27.3,
+  'Benton':-22.1,'Black Hawk':4.1,'Boone':-14.3,'Bremer':-18.4,'Buchanan':-22.3,
+  'Buena Vista':-22.5,'Butler':-29.2,'Calhoun':-33.2,'Carroll':-20.1,'Cass':-28.1,
+  'Cedar':-21.2,'Cerro Gordo':-10.3,'Cherokee':-35.8,'Chickasaw':-20.4,'Clarke':-25.8,
+  'Clay':-28.5,'Clayton':-18.7,'Clinton':-11.2,'Crawford':-28.0,'Dallas':-2.9,
+  'Davis':-32.0,'Decatur':-28.4,'Delaware':-18.8,'Des Moines':-10.1,'Dickinson':-24.4,
+  'Dubuque':1.8,'Emmet':-28.0,'Fayette':-23.2,'Floyd':-24.6,'Franklin':-33.7,
+  'Fremont':-36.8,'Greene':-29.5,'Grundy':-29.2,'Guthrie':-19.2,'Hamilton':-25.4,
+  'Hancock':-33.6,'Hardin':-26.5,'Harrison':-34.1,'Henry':-24.2,'Howard':-21.8,
+  'Humboldt':-29.0,'Ida':-38.5,'Iowa':-18.2,'Jackson':-21.5,'Jasper':-13.9,
+  'Jefferson':-5.8,'Johnson':41.6,'Jones':-15.3,'Keokuk':-30.2,'Kossuth':-32.1,
+  'Lee':-14.6,'Linn':13.2,'Louisa':-28.4,'Lucas':-25.5,'Lyon':-56.6,
+  'Madison':-16.5,'Mahaska':-30.0,'Marion':-18.3,'Marshall':-16.1,'Mills':-32.2,
+  'Mitchell':-26.8,'Monona':-32.5,'Monroe':-28.9,'Montgomery':-35.1,'Muscatine':-15.4,
+  "O'Brien":-45.8,'Osceola':-49.3,'Page':-35.5,'Palo Alto':-28.8,'Plymouth':-41.6,
+  'Pocahontas':-33.8,'Polk':14.8,'Pottawattamie':-18.6,'Poweshiek':-13.1,
+  'Ringgold':-34.2,'Sac':-36.4,'Scott':6.4,'Shelby':-33.6,'Sioux':-61.3,
+  'Story':14.2,'Tama':-20.5,'Taylor':-35.4,'Union':-26.1,'Van Buren':-33.0,
+  'Wapello':-18.6,'Warren':-7.2,'Washington':-14.0,'Wayne':-35.6,'Webster':-19.4,
+  'Winnebago':-25.3,'Winneshiek':-8.5,'Woodbury':-19.2,'Worth':-24.6,'Wright':-33.9
+};
+
+async function loadVoteData() {
+  if (voteData) return true;
+  try {
+    const vr = await fetch('./data/county_votes.json');
+    if (!vr.ok) throw new Error('fetch failed');
+    voteData = await vr.json();
+    // Filter to Iowa only (FIPS 19xxx)
+    const iowaVoteData = {};
+    for (const [fips, entry] of Object.entries(voteData)) {
+      if (String(fips).startsWith('19')) iowaVoteData[fips] = entry;
+    }
+    if (Object.keys(iowaVoteData).length > 0) voteData = iowaVoteData;
+    detectVoteDataScale();
+    return true;
+  } catch (e) {
+    console.warn('county_votes.json unavailable; using embedded Iowa margins:', e);
+    return false;
+  }
+}
+
+function detectVoteDataScale() {
+  if (!voteData) return;
+  let maxAbs = 0;
+  for (const entry of Object.values(voteData)) {
+    const v = Math.abs(+entry?.['2024'] || 0);
+    if (v > maxAbs) maxAbs = v;
+  }
+  voteDataScale = maxAbs > 1 ? 0.01 : 1;
+}
+
+function getMarginForFips(fips) {
+  const entry = voteData?.[fips];
+  const v = entry?.['2024'];
+  return v === undefined || v === null ? null : +v * voteDataScale;
+}
+
+// Embedded fallback: get margin by county name
+function getMarginForCounty(name) {
+  const m = IOWA_COUNTY_2024[name];
+  return m !== undefined ? m / 100 : null;
+}
+
+function voteColor(margin) {
+  if (margin === null) return null;
+  const t = Math.max(-1, Math.min(1, margin / 0.40));
+  const lerp = (a, b, u) => Math.round(a + (b - a) * u);
+  let c;
+  if (t < 0) { const u = -t; c = [lerp(71, 185, u), lerp(85, 28, u), lerp(105, 28, u)]; }
+  else { const u = t; c = [lerp(71, 29, u), lerp(85, 78, u), lerp(105, 216, u)]; }
+  const opacity = 0.45 + 0.40 * Math.abs(t);
+  return { color: `rgb(${c[0]},${c[1]},${c[2]})`, opacity };
+}
+
+function matrixColor(oppScore, margin) {
+  if (oppScore === null || margin === null) return null;
+  const t = Math.max(0, Math.min(1, oppScore));
+  const p = Math.max(-1, Math.min(1, margin));
+  const pNorm = (p + 1) / 2;
+  const hLow  = 30  + pNorm * (195 - 30);
+  const hHigh = 5   + pNorm * (220 - 5);
+  const h = hLow + t * (hHigh - hLow);
+  const s = 62 + t * 18;
+  const l = 38 - t * 5;
+  const opacity = 0.25 + t * 0.50 + Math.abs(p) * 0.15;
+  return { color: `hsl(${Math.round(h)},${Math.round(s)}%,${Math.round(l)}%)`, opacity: Math.min(0.88, opacity) };
+}
+
+function marginLabel(margin) {
+  if (margin === null) return 'No data';
+  const pts = Math.abs(margin * 100);
+  if (pts < 0.05) return 'Even';
+  return `${margin < 0 ? 'R' : 'D'} +${pts.toFixed(1)}`;
+}
+
+let _maxCountyOpp = 1, _countyOppMap = {};
+function buildCountyOppMap() {
+  _countyOppMap = {};
+  rows.forEach(r => {
+    const key = (r['County'] || '').replace(/\s+County$/i, '').trim().toLowerCase();
+    if (key) _countyOppMap[key] = (_countyOppMap[key] || 0) + 1;
+  });
+  _maxCountyOpp = Math.max(1, ...Object.values(_countyOppMap));
+}
+function getCountyOppScore(countyName) {
+  const key = (countyName || '').trim().toLowerCase();
+  return (_countyOppMap[key] || 0) / _maxCountyOpp;
+}
+
+function buildVotingLayer(features) {
+  return L.geoJSON({ type: 'FeatureCollection', features }, {
+    style(feat) {
+      const name = feat.properties.NAME || feat.properties.name || '';
+      const fips = String(feat.id || '').padStart(5, '0');
+      // Try county_votes.json first, fall back to embedded Iowa data
+      const margin = (voteData && getMarginForFips(fips) !== null)
+        ? getMarginForFips(fips)
+        : getMarginForCounty(name);
+      const vc = voteColor(margin);
+      return vc
+        ? { color: '#2c3544', weight: 0.8, opacity: 1, fillColor: vc.color, fillOpacity: vc.opacity }
+        : { fillOpacity: 0, color: '#2c3544', weight: 0.8 };
+    },
+    onEachFeature(feat, layer) {
+      const name = feat.properties.NAME || feat.properties.name || '';
+      const fips = String(feat.id || '').padStart(5, '0');
+      const margin = (voteData && getMarginForFips(fips) !== null)
+        ? getMarginForFips(fips)
+        : getMarginForCounty(name);
+      layer.bindTooltip(`<b>${name} County</b><br>2024: ${marginLabel(margin)}`, { sticky: true, className: 'pin-tooltip' });
+      layer.on({ mouseover: e => e.target.setStyle({ weight: 2, color: '#cbd5e1' }), mouseout: e => votingLayer.resetStyle(e.target) });
+    }
+  });
+}
+
+function buildMatrixLayer(features) {
+  buildCountyOppMap();
+  return L.geoJSON({ type: 'FeatureCollection', features }, {
+    style(feat) {
+      const name = feat.properties.NAME || feat.properties.name || '';
+      const fips = String(feat.id || '').padStart(5, '0');
+      const margin = (voteData && getMarginForFips(fips) !== null)
+        ? getMarginForFips(fips)
+        : getMarginForCounty(name);
+      const oppScore = getCountyOppScore(name);
+      const mc = matrixColor(oppScore, margin);
+      return mc
+        ? { color: '#2c3544', weight: 0.8, opacity: 1, fillColor: mc.color, fillOpacity: mc.opacity }
+        : { fillOpacity: 0, color: '#2c3544', weight: 0.8 };
+    },
+    onEachFeature(feat, layer) {
+      const name = feat.properties.NAME || feat.properties.name || '';
+      const fips = String(feat.id || '').padStart(5, '0');
+      const margin = (voteData && getMarginForFips(fips) !== null)
+        ? getMarginForFips(fips)
+        : getMarginForCounty(name);
+      const cnt = _countyOppMap[(name || '').toLowerCase()] || 0;
+      layer.bindTooltip(
+        `<b>${name} County</b><br>${cnt} incident${cnt === 1 ? '' : 's'} · 2024: ${marginLabel(margin)}`,
+        { sticky: true, className: 'pin-tooltip' }
+      );
+      layer.on({ mouseover: e => e.target.setStyle({ weight: 2, color: '#cbd5e1' }), mouseout: e => matrixLayer.resetStyle(e.target) });
+    }
+  });
+}
+
+function getLayerMode() {
+  const el = document.querySelector('input[name="layerMode"]:checked');
+  return el ? el.value : 'opposition';
+}
+
+async function updateLayers() {
+  const mode = getLayerMode();
+  const oppLegend = document.getElementById('legendOppActivity');
+  if (oppLegend) oppLegend.style.display = mode === 'opposition' ? 'block' : 'none';
+  document.getElementById('legendVoting').style.display = mode === 'voting' ? 'block' : 'none';
+  document.getElementById('legendMatrix').style.display = mode === 'matrix' ? 'block' : 'none';
+
+  if (choroplethLayer) {
+    if (mode === 'opposition' && !map.hasLayer(choroplethLayer)) map.addLayer(choroplethLayer);
+    if (mode !== 'opposition' && map.hasLayer(choroplethLayer)) map.removeLayer(choroplethLayer);
+  }
+  if (votingLayer) { map.removeLayer(votingLayer); votingLayer = null; }
+  if (matrixLayer) { map.removeLayer(matrixLayer); matrixLayer = null; }
+
+  if (mode === 'opposition') { updateChoroplethVisuals(); return; }
+
+  await loadVoteData();
+  const features = _choroplethFeatures;
+  if (!features.length) return;
+
+  if (mode === 'voting') {
+    votingLayer = buildVotingLayer(features);
+    if (votingLayer) { votingLayer.addTo(map); votingLayer.bringToBack(); }
+  } else if (mode === 'matrix') {
+    matrixLayer = buildMatrixLayer(features);
+    if (matrixLayer) { matrixLayer.addTo(map); matrixLayer.bringToBack(); }
+    drawMatrixLegend();
+  }
+}
+
+function drawMatrixLegend() {
+  const canvas = document.getElementById('matrixLegendCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height, steps = 40;
+  const cw = W / steps, ch = H / steps;
+  for (let xi = 0; xi < steps; xi++) {
+    for (let yi = 0; yi < steps; yi++) {
+      const opp    = xi / (steps - 1);
+      const margin = 1 - (yi / (steps - 1)) * 2;
+      const mc = matrixColor(opp, margin);
+      if (!mc) continue;
+      ctx.globalAlpha = mc.opacity;
+      ctx.fillStyle = mc.color;
+      ctx.fillRect(xi * cw, yi * ch, cw + 0.5, ch + 0.5);
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#8a96a4';
+  ctx.font = '9px Inter,sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText('D', W - 2, 9);
+  ctx.fillText('R', W - 2, H - 2);
+}
+
+// ── Load Iowa counties GeoJSON ────────────────────────────────────────────────
+// Fetches the Plotly US counties FIPS GeoJSON and filters to Iowa (FIPS 19xxx)
+fetch('https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json')
+  .then(r => r.json())
+  .then(geo => {
+    // Filter to Iowa counties only
+    const iowaGeo = {
+      type: 'FeatureCollection',
+      features: geo.features.filter(f => String(f.id || '').startsWith('19'))
+    };
+    _geoJsonCache = iowaGeo;
+    tryBuildChoropleth();
+  })
+  .catch(e => {
+    console.warn('Iowa county GeoJSON failed to load:', e);
+    mapStatus('County boundaries failed to load — pins still work. <br>Check network and reload.');
+    setTimeout(() => mapStatus(''), 6000);
+  });
+
+// ── Utility functions ─────────────────────────────────────────────────────────
+function renderOutcomeSummary(p, w, l, mx) {
+  const tot = Math.max(1, p + w + l + mx);
+  const pct = n => (n / tot * 100).toFixed(1);
+  const el = document.getElementById('outcomeSummary');
+  if (el) el.innerHTML = `
+    <div class="summary-bar">
+      <div class="summary-seg" title="Pending / Active: ${p}" style="width:${pct(p)}%;background:var(--pending)"></div>
+      <div class="summary-seg" title="Blocked: ${w}" style="width:${pct(w)}%;background:var(--win)"></div>
+      <div class="summary-seg" title="Approved: ${l}" style="width:${pct(l)}%;background:var(--loss)"></div>
+      <div class="summary-seg" title="Mixed: ${mx}" style="width:${pct(mx)}%;background:var(--mixed)"></div>
+    </div>
+    <div class="summary-meta">
+      <span>Pending ${p}</span><span>Blocked ${w}</span><span>Approved ${l}</span><span>Mixed ${mx}</span>
+    </div>
+  `;
+}
+
+function highlightCard(idx) {
+  if (idx < 0 || idx == null) return;
+  if (!cardRefs[idx]) {
+    const pos = _visibleCache.findIndex(v => v.i === idx);
+    if (pos >= 0 && pos >= _renderedCount) {
+      _listLimit = (Math.floor(pos / LIST_CHUNK) + 1) * LIST_CHUNK;
+      renderList(false);
+    }
+  }
+  cardRefs.forEach(c => c && c.classList.remove('active'));
+  if (cardRefs[idx]) { cardRefs[idx].classList.add('active'); cardRefs[idx].scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+}
+
+function statFilter(v) {
+  const el = document.getElementById('fOutcome');
+  if (!v || el.value === v) { el.value = ''; }
+  else {
+    if (![...el.options].some(o => o.value === v)) {
+      const o = document.createElement('option'); o.value = v; o.textContent = friendlyOutcome(v);
+      el.appendChild(o);
+    }
+    el.value = v;
+  }
+  render();
+}
+
+function updateStatActive() {
+  const v = document.getElementById('fOutcome').value;
+  const activeId = { pending: 'statPending', win: 'statWin', loss: 'statLoss', mixed: 'statMixed' }[v];
+  ['statPending', 'statWin', 'statLoss', 'statMixed'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('active', id === activeId);
+  });
+}
+
+function resetFilters() {
+  document.getElementById('q').value = '';
+  ['fCounty', 'fDistrict', 'fType', 'fOutcome', 'fIssue', 'fAuthority', 'fSource'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('activeOnly').checked = false;
+  ['statPending', 'statWin', 'statLoss', 'statMixed'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.classList.remove('active');
+  });
+  render();
+}
+
+function zoomToResults() {
+  const pts = [];
+  const _f = readFilters();
+  rows.forEach(r => {
+    if (!match(r, _f)) return;
+    const lat = +r.lat, lon = +r.lon;
+    if (!isNaN(lat) && !isNaN(lon)) pts.push([lat, lon]);
+  });
+  if (pts.length) navToBounds(pts, { padding: [40, 40], maxZoom: 10, duration: 1.0, easeLinearity: 0.15 });
+  else navToBounds([[40.3754, -96.6397], [43.5012, -90.1401]], { padding: [30, 30] }); // Iowa bounds
+}
+
+function toggleAdvFilters(btn) {
+  const el = document.getElementById('advFilters');
+  el.classList.toggle('open');
+  btn.querySelector('svg').style.transform = el.classList.contains('open') ? 'rotate(180deg)' : '';
+}
+
+function updateCardCount(vis, tot) {
+  const el = document.getElementById('cardCount');
+  if (!el) return;
+  const oppTot = window._oppTotal || tot;
+  if (!oppTot) { el.innerHTML = '<span style="color:var(--muted)">Loading…</span>'; return; }
+  el.innerHTML = vis === oppTot
+    ? `<b>${oppTot.toLocaleString()}</b> Iowa incidents`
+    : `<b>${vis.toLocaleString()}</b> of <b>${oppTot.toLocaleString()}</b> Iowa incidents match filters`;
+}
+
+function srcTagFull(s) {
+  const tags = {
+    ongoing_monitoring: ['src-bryce', 'Live',  'Ongoing monitoring'],
+    bryce_rejection_db: ['src-bryce', 'Bryce', 'Robert Bryce — Data Center Rejection Database'],
+    fractracker:        ['src-frac',  'FT',    'FracTracker Alliance — Open U.S. Data Centers Tracker'],
+    datacenter_watch:   ['src-dcw',   'DCW',   'Data Center Watch — quarterly opposition reports'],
+    dc_opposition_site: ['src-dco',   'DCO',   'DataCenterOpposition.com — community-reported'],
+  };
+  const [cls, label, tip] = tags[s] || ['src-dct', 'Hist', 'Historical archive 2014–2025'];
+  return `<span class="src-tag ${cls}">${label}<span class="src-tip">${tip}</span></span>`;
+}
+
+function sevDotsLabeled(raw) {
+  const n = Math.min(5, Math.max(1, +raw || 1));
+  const dots = Array.from({ length: 5 }, (_, i) =>
+    `<span style="width:7px;height:7px;border-radius:50%;display:inline-block;background:${i < n ? '#e74c3c' : '#2c3544'}"></span>`
+  ).join('');
+  return `<span class="sev-wrap" title="Severity: ${n} out of 5">${dots}</span>`;
+}
+
+// ── How to use modal ──────────────────────────────────────────────────────────
+function showHowToUse() {
+  if (document.getElementById('htuWrap')) return;
+  const wrap = document.createElement('div');
+  wrap.id = 'htuWrap';
+  wrap.style.cssText = 'position:absolute;inset:0;z-index:598';
+  wrap.innerHTML = `
+    <div class="htu-overlay"></div>
+    <div class="how-to-use">
+      <h3>🌽 Iowa Opposition Tracker</h3>
+      <p>Tracking data center opposition across all 99 Iowa counties.</p>
+      <ul>
+        <li><span class="ico">🗺️</span><div><b>Hover a county</b> to see opposition totals. Click to filter the sidebar to that county.</div></li>
+        <li><span class="ico">📌</span><div><b>Click a pin</b> for full incident details, sources, and links.</div></li>
+        <li><span class="ico">🏛️</span><div><b>Filter by district</b> (IA-01 through IA-04) to focus on specific congressional turf.</div></li>
+        <li><span class="ico">🗳️</span><div><b>Toggle map shading</b> to overlay 2024 presidential results or the Opposition × Politics matrix.</div></li>
+      </ul>
+      <button class="close-btn" onclick="_htuMark();document.getElementById('htuWrap').remove()">Got it →</button>
+    </div>`;
+  document.querySelector('.app').appendChild(wrap);
+}
+function _htuSeen() { try { return window.localStorage && localStorage.getItem('ia_dctracker_htu') === '1'; } catch (e) { return false; } }
+function _htuMark() { try { localStorage.setItem('ia_dctracker_htu', '1'); } catch (e) {} }
+window.addEventListener('load', () => { if (!_htuSeen()) setTimeout(showHowToUse, 700); });
+
+// ── Kick off data load ────────────────────────────────────────────────────────
+startCSVLoad(['./master_opposition.csv', DATA_BASE + '/master_opposition.csv']);
+</script>
+</body>
+</html>
